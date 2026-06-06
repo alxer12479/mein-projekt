@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>Hase & Jäger</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #1a1a2e; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: Arial, sans-serif; color: #fff; }
+  h1 { margin-bottom: 10px; font-size: 1.8rem; color: #e0c060; letter-spacing: 2px; }
+  #info { margin-bottom: 10px; font-size: 0.95rem; color: #aaa; }
+  #score { margin-bottom: 14px; font-size: 1.1rem; color: #7fdfaa; }
+  canvas { border: 3px solid #444; border-radius: 8px; background: #2d5a27; }
+  #msg { margin-top: 14px; font-size: 1.1rem; color: #ff7070; height: 24px; }
+  #restart { margin-top: 10px; padding: 8px 28px; background: #e0c060; color: #1a1a2e; border: none; border-radius: 6px; font-size: 1rem; cursor: pointer; font-weight: bold; display: none; }
+  #restart:hover { background: #f0d070; }
+</style>
+</head>
+<body>
+<h1>🐇 Hase & Jäger 🔫</h1>
+<div id="info">Pfeiltasten = Hase bewegen | Jäger verfolgt dich!</div>
+<div id="score">Schritte überlebt: <span id="steps">0</span></div>
+<canvas id="c" width="480" height="480"></canvas>
+<div id="msg"></div>
+<button id="restart" onclick="init()">Nochmal spielen</button>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const COLS = 16, ROWS = 16, TILE = 30;
+const stepEl = document.getElementById('steps');
+const msgEl = document.getElementById('msg');
+const restartBtn = document.getElementById('restart');
+
+// Tile types
+const EMPTY = 0, WALL = 1, CARROT = 2;
+
+let map, hase, jaeger, steps, running;
+
+function buildMap() {
+  const m = Array.from({length: ROWS}, () => Array(COLS).fill(EMPTY));
+  // Border walls
+  for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+    if (r === 0 || r === ROWS-1 || c === 0 || c === COLS-1) m[r][c] = WALL;
+  }
+  // Random inner walls
+  for (let i = 0; i < 28; i++) {
+    const r = 2 + Math.floor(Math.random() * (ROWS-4));
+    const c = 2 + Math.floor(Math.random() * (COLS-4));
+    m[r][c] = WALL;
+  }
+  // Carrots
+  let placed = 0;
+  while (placed < 8) {
+    const r = 1 + Math.floor(Math.random() * (ROWS-2));
+    const c = 1 + Math.floor(Math.random() * (COLS-2));
+    if (m[r][c] === EMPTY) { m[r][c] = CARROT; placed++; }
+  }
+  return m;
+}
+
+function init() {
+  map = buildMap();
+  hase  = { r: 1, c: 1 };
+  jaeger = { r: ROWS-2, c: COLS-2 };
+  map[hase.r][hase.c] = EMPTY;
+  map[jaeger.r][jaeger.c] = EMPTY;
+  steps = 0;
+  running = true;
+  stepEl.textContent = steps;
+  msgEl.textContent = '';
+  restartBtn.style.display = 'none';
+  draw();
+}
+
+// BFS shortest path for Jäger
+function bfsNext(from, to) {
+  const visited = Array.from({length: ROWS}, () => Array(COLS).fill(false));
+  const prev = Array.from({length: ROWS}, () => Array(COLS).fill(null));
+  const queue = [from];
+  visited[from.r][from.c] = true;
+  const dirs = [{dr:-1,dc:0},{dr:1,dc:0},{dr:0,dc:-1},{dr:0,dc:1}];
+  while (queue.length) {
+    const cur = queue.shift();
+    if (cur.r === to.r && cur.c === to.c) {
+      // Trace back
+      let node = cur;
+      while (prev[node.r][node.c] && !(prev[node.r][node.c].r === from.r && prev[node.r][node.c].c === from.c))
+        node = prev[node.r][node.c];
+      return node;
+    }
+    for (const d of dirs) {
+      const nr = cur.r + d.dr, nc = cur.c + d.dc;
+      if (nr>=0 && nr<ROWS && nc>=0 && nc<COLS && !visited[nr][nc] && map[nr][nc] !== WALL) {
+        visited[nr][nc] = true;
+        prev[nr][nc] = cur;
+        queue.push({r:nr, c:nc});
+      }
+    }
+  }
+  return from; // no path
+}
+
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const colors = { [EMPTY]: '#3a7a30', [WALL]: '#5a3a1a', [CARROT]: '#3a7a30' };
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      ctx.fillStyle = colors[map[r][c]];
+      ctx.fillRect(c*TILE, r*TILE, TILE, TILE);
+      if (map[r][c] === WALL) {
+        ctx.fillStyle = '#4a2a10';
+        ctx.fillRect(c*TILE+2, r*TILE+2, TILE-4, TILE-4);
+      }
+      if (map[r][c] === CARROT) {
+        ctx.font = '18px serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('🥕', c*TILE+TILE/2, r*TILE+TILE/2);
+      }
+    }
+  }
+  // Draw Jäger
+  ctx.font = '22px serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('🔫', jaeger.c*TILE+TILE/2, jaeger.r*TILE+TILE/2);
+  // Draw Hase
+  ctx.fillText('🐇', hase.c*TILE+TILE/2, hase.r*TILE+TILE/2);
+}
+
+function moveHase(dr, dc) {
+  if (!running) return;
+  const nr = hase.r + dr, nc = hase.c + dc;
+  if (nr<0||nr>=ROWS||nc<0||nc>=COLS||map[nr][nc]===WALL) return;
+  if (map[nr][nc] === CARROT) map[nr][nc] = EMPTY; // eat carrot
+  hase = {r: nr, c: nc};
+  steps++;
+  stepEl.textContent = steps;
+
+  // Jäger zieht nach (BFS)
+  const next = bfsNext(jaeger, hase);
+  jaeger = next;
+
+  // Erwischt?
+  if (hase.r === jaeger.r && hase.c === jaeger.c) {
+    running = false;
+    msgEl.textContent = `Erwischt nach ${steps} Schritten! 😱`;
+    restartBtn.style.display = 'inline-block';
+  }
+  draw();
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowUp')    { e.preventDefault(); moveHase(-1, 0); }
+  if (e.key === 'ArrowDown')  { e.preventDefault(); moveHase( 1, 0); }
+  if (e.key === 'ArrowLeft')  { e.preventDefault(); moveHase( 0,-1); }
+  if (e.key === 'ArrowRight') { e.preventDefault(); moveHase( 0, 1); }
+});
+
+init();
+</script>
+</body>
+</html>
